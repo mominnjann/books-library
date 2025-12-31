@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.launch
@@ -60,6 +61,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }) {
                             Icon(Icons.Default.Share, contentDescription = "Export")
+                        }
+
+                        // Drive backup
+                        IconButton(onClick = {
+                            context.startActivity(Intent(context, com.momin.books.backup.DriveBackupActivity::class.java))
+                        }) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = "Backup to Drive")
                         }
                     })
                 },

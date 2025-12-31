@@ -14,9 +14,17 @@ MVP features implemented:
 Planned / TODO:
 - Improve EPUB rendering and navigation
 - Implement Google Drive backup & restore using OAuth 2.0
+  - Add Sign-In UI and request Drive scopes
+  - Add upload / restore flows using Drive REST API (multipart upload)
+  - Persist tokens securely (or rely on Google Play Sign-In session) and handle consent revocation
+  - Acceptance: user can upload a ZIP backup and restore it from Drive with clear error messages
 - Add bookmarks and better resume logic
 - Tests and edge-case handling
 - UI polish
+
+Developer notes:
+- Create an OAuth client in Google Cloud Console and add any required SHA fingerprints to enable sign-in on device.
+- The app currently includes a basic Drive upload skeleton (`DriveBackupActivity`) that performs sign-in and multipart upload; production needs robust token handling and retries.
 
 How to run:
 - Open the project in Android Studio and sync Gradle.
