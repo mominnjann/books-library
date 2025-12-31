@@ -107,15 +107,15 @@ fun PDFReaderView(path: String, startPage: Int = 0, onPageChanged: (Int) -> Unit
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f)) {
             if (bitmap != null) {
-                Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = "PDF page", modifier = Modifier.fillMaxSize())
+                Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = "Page ${pageIndex + 1} (PDF)", modifier = Modifier.fillMaxSize())
             } else {
                 Text("Unable to render page")
             }
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Button(onClick = { if (pageIndex > 0) pageIndex -= 1 }) { Text("Prev") }
+            Button(onClick = { if (pageIndex > 0) pageIndex -= 1 }, modifier = Modifier.semantics { contentDescription = "Previous page" }) { Text("Prev") }
             Text("Page ${'$'}{pageIndex + 1}")
-            Button(onClick = { pageIndex += 1 }) { Text("Next") }
+            Button(onClick = { pageIndex += 1 }, modifier = Modifier.semantics { contentDescription = "Next page" }) { Text("Next") }
         }
     }
 }
@@ -197,13 +197,13 @@ fun EPUBReaderView(path: String) {
         // Controls
         Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Row {
-                Button(onClick = { showToc = true }) { Text("TOC") }
+                Button(onClick = { showToc = true }, modifier = Modifier.semantics { contentDescription = "Open table of contents" }) { Text("TOC") }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { fontScale = (fontScale - 10).coerceAtLeast(50) }) { Text("A-") }
+                Button(onClick = { fontScale = (fontScale - 10).coerceAtLeast(50) }, modifier = Modifier.semantics { contentDescription = "Decrease font size" }) { Text("A-") }
                 Spacer(Modifier.width(4.dp))
-                Button(onClick = { fontScale = (fontScale + 10).coerceAtMost(200) }) { Text("A+") }
+                Button(onClick = { fontScale = (fontScale + 10).coerceAtMost(200) }, modifier = Modifier.semantics { contentDescription = "Increase font size" }) { Text("A+") }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { darkMode = !darkMode }) { Text(if (darkMode) "Light" else "Dark") }
+                Button(onClick = { darkMode = !darkMode }, modifier = Modifier.semantics { contentDescription = "Toggle dark mode" }) { Text(if (darkMode) "Light" else "Dark") }
             }
         }
 
@@ -263,7 +263,7 @@ fun EPUBReaderView(path: String) {
                                         Text(item.second)
                                         Text(item.first, style = MaterialTheme.typography.bodySmall)
                                     }
-                                    Button(onClick = { currentHref = item.first; showToc = false }) { Text("Open") }
+                                    Button(onClick = { currentHref = item.first; showToc = false }, modifier = Modifier.semantics { contentDescription = "Open ${item.second}" }) { Text("Open") }
                                 }
                             }
                         }

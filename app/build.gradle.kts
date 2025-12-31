@@ -76,6 +76,7 @@ dependencies {
     testImplementation("androidx.room:room-testing:2.5.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.11.0")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.4.3")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

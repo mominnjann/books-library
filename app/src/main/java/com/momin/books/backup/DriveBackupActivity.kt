@@ -211,7 +211,7 @@ class DriveBackupActivity : ComponentActivity() {
                                                 Text("${formatTime(item.createdTime)} • ${humanSize(item.size)}", style = MaterialTheme.typography.bodySmall)
                                             }
                                             Spacer(Modifier.width(8.dp))
-                                            Button(onClick = { confirmRestoreFor = item }) {
+                                            Button(onClick = { confirmRestoreFor = item }, modifier = Modifier.semantics { contentDescription = "Restore ${item.name}" }) {
                                                 Text("Restore")
                                             }
                                         }

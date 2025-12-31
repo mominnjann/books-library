@@ -46,7 +46,7 @@ class BookDetailActivity : ComponentActivity() {
                                 }
                                 startActivity(intent)
                             }
-                        }) {
+                        }, modifier = Modifier.semantics { contentDescription = "Open ${book?.title ?: "book"} in reader" }) {
                             Text("Open Reader")
                         }
                         Spacer(modifier = Modifier.width(8.dp))
@@ -58,7 +58,7 @@ class BookDetailActivity : ComponentActivity() {
                                     finish()
                                 }
                             }
-                        }) {
+                        }, modifier = Modifier.semantics { contentDescription = "Delete ${book?.title ?: "book"}" }) {
                             Text("Delete")
                         }
                     }
