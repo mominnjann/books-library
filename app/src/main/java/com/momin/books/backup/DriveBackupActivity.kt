@@ -1,7 +1,5 @@
 package com.momin.books.backup
 
-data class BackupItem(val id: String, val name: String, val createdTime: String?, val size: Long?)
-
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -35,6 +33,8 @@ import java.io.File
  * Simple Activity that handles Google Sign-In for Drive scopes and uploads the exported ZIP.
  * This is a minimal skeleton to demonstrate auth and upload; handle errors & token persistence for production.
  */
+data class BackupItem(val id: String, val name: String, val createdTime: String?, val size: Long?)
+
 @OptIn(ExperimentalMaterial3Api::class)
 class DriveBackupActivity : ComponentActivity() {
     private val client = OkHttpClient()
