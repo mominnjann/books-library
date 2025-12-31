@@ -45,6 +45,14 @@ class DriveBackupActivity : ComponentActivity() {
 
         val signInClient = GoogleSignIn.getClient(this, gso)
 
+        // If we already have a cached token that hasn't expired, attempt upload immediately
+        val cached = DriveAuthManager.getCachedToken(this)
+        if (cached != null) {
+            lifecycleScope.launchWhenStarted {
+                uploadBackupWithToken(cached)
+            }
+        }
+
         val signInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
@@ -71,6 +79,8 @@ class DriveBackupActivity : ComponentActivity() {
                             }
 
                             if (token != null) {
+                                // Cache token with a 1-hour lifetime (typical access token duration)
+                                DriveAuthManager.saveToken(this@DriveBackupActivity, token, 3600)
                                 uploadBackupWithToken(token)
                             } else {
                                 showMessage("Unable to obtain auth token")
@@ -164,7 +174,12 @@ class DriveBackupActivity : ComponentActivity() {
             .build()
 
         client.newCall(req).execute().use { resp ->
-            return resp.isSuccessful
+            if (resp.isSuccessful) return true
+            // Clear cached token on 401 so next run forces re-auth
+            if (resp.code == 401) {
+                DriveAuthManager.clearToken(this@DriveBackupActivity)
+            }
+            return false
         }
     }
 }
