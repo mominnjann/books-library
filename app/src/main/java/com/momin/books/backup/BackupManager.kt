@@ -81,5 +81,83 @@ object BackupManager {
         }
     }
 
-    // TODO: Implement Google Drive upload & restore using OAuth 2.0 and Drive REST API
+    /**
+     * Restore a library ZIP exported by `exportLibrary`.
+     * Returns true on success.
+     */
+    suspend fun restoreLibrary(context: Context, zipFile: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val tmpDir = File(context.cacheDir, "books_restore_${System.currentTimeMillis()}")
+            tmpDir.mkdirs()
+
+            java.util.zip.ZipFile(zipFile).use { zf ->
+                val entries = zf.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    val out = File(tmpDir, entry.name)
+                    zf.getInputStream(entry).use { ins ->
+                        out.outputStream().use { outs ->
+                            ins.copyTo(outs)
+                        }
+                    }
+                }
+            }
+
+            val metaFile = File(tmpDir, "metadata.json")
+            if (!metaFile.exists()) {
+                tmpDir.deleteRecursively()
+                return@withContext false
+            }
+
+            val metaStr = metaFile.readText(Charsets.UTF_8)
+            val meta = org.json.JSONArray(metaStr)
+
+            val dao = AppDatabase.getInstance(context).bookDao()
+
+            val booksDir = File(context.filesDir, "books")
+            if (!booksDir.exists()) booksDir.mkdirs()
+
+            for (i in 0 until meta.length()) {
+                val o = meta.getJSONObject(i)
+                val fname = o.optString("filePath")
+                val cover = o.optString("coverUri", null)
+                val srcFile = File(tmpDir, fname)
+                val destFile = File(booksDir, srcFile.name)
+                if (srcFile.exists()) srcFile.copyTo(destFile, overwrite = true)
+
+                var coverPath: String? = null
+                if (!cover.isNullOrEmpty()) {
+                    val cf = File(tmpDir, cover)
+                    if (cf.exists()) {
+                        val destCover = File(booksDir, cf.name)
+                        cf.copyTo(destCover, overwrite = true)
+                        coverPath = destCover.absolutePath
+                    }
+                }
+
+                val title = o.optString("title")
+                val author = o.optString("author")
+                val genre = if (o.has("genre")) o.optString("genre") else null
+                val lastPage = o.optInt("lastPage", 0)
+
+                val book = Book(
+                    title = title,
+                    author = author,
+                    genre = genre,
+                    filePath = destFile.absolutePath,
+                    coverUri = coverPath,
+                    lastPage = lastPage
+                )
+
+                dao.insert(book)
+            }
+
+            // cleanup
+            tmpDir.deleteRecursively()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
 }

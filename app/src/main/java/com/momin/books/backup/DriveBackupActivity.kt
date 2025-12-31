@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
+import android.widget.Toast
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -114,6 +115,10 @@ class DriveBackupActivity : ComponentActivity() {
                         Text(if (busy) "Signing in..." else "Sign in & Upload Backup")
                     }
                     Spacer(Modifier.height(8.dp))
+                    Button(onClick = { startRestoreFlow() }, enabled = !busy) {
+                        Text("List & Restore Latest Backup from Drive")
+                    }
+                    Spacer(Modifier.height(8.dp))
                     msg?.let { Text(it) }
                 }
             }
@@ -121,8 +126,9 @@ class DriveBackupActivity : ComponentActivity() {
     }
 
     private fun showMessage(text: String) {
-        // Simple toast replacement: use log + finish with message in intent result
+        // Simple toast + finish with message in intent result
         runOnUiThread {
+            Toast.makeText(this, text, Toast.LENGTH_LONG).show()
             val i = Intent().apply { putExtra("message", text) }
             setResult(Activity.RESULT_OK, i)
         }
@@ -155,6 +161,85 @@ class DriveBackupActivity : ComponentActivity() {
         }
     }
 
+    private fun startRestoreFlow() {
+        // Sign-in if necessary, or use cached token
+        val cached = DriveAuthManager.getCachedToken(this)
+        if (cached != null) {
+            lifecycleScope.launchWhenStarted {
+                restoreLatestBackup(cached)
+            }
+        } else {
+            // launch sign-in flow; after sign-in the existing code will cache token and we can call restore
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestScopes(Scope("https://www.googleapis.com/auth/drive.file"))
+                .build()
+            val signInClient = GoogleSignIn.getClient(this, gso)
+            val signInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == Activity.RESULT_OK) {
+                    val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                    try {
+                        val acct = task.getResult(Exception::class.java)
+                        if (acct != null) {
+                            lifecycleScope.launchWhenStarted {
+                                val scope = "oauth2:https://www.googleapis.com/auth/drive.file"
+                                val token = withContext(Dispatchers.IO) {
+                                    try {
+                                        GoogleAuthUtil.getToken(this@DriveBackupActivity, acct.account, scope)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        null
+                                    }
+                                }
+                                if (token != null) {
+                                    DriveAuthManager.saveToken(this@DriveBackupActivity, token, 3600)
+                                    restoreLatestBackup(token)
+                                } else {
+                                    showMessage("Unable to obtain token for restore")
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        showMessage("Sign-in failed")
+                    }
+                } else {
+                    showMessage("Sign-in canceled")
+                }
+            }
+            signInLauncher.launch(signInClient.signInIntent)
+        }
+    }
+
+    private suspend fun restoreLatestBackup(token: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                val files = listBackupsOnDrive(token)
+                if (files.isEmpty()) {
+                    showMessage("No backups found on Drive")
+                    return@withContext
+                }
+                val latest = files.first()
+                val out = File(cacheDir, latest.second)
+                val ok = downloadFileFromDrive(token, latest.first, out)
+                if (!ok) {
+                    showMessage("Failed to download backup")
+                    return@withContext
+                }
+
+                val restored = com.momin.books.backup.BackupManager.restoreLibrary(this@DriveBackupActivity, out)
+                if (restored) {
+                    showMessage("Restore complete")
+                } else {
+                    showMessage("Restore failed: invalid backup")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                showMessage("Error during restore: ${e.message}")
+            }
+        }
+    }
+
     private fun uploadFileToDrive(token: String, file: File): Boolean {
         // Multipart upload per Drive API (metadata part + file part)
         val metadata = "{" + "\"name\": \"${file.name}\"" + "}"
@@ -180,6 +265,55 @@ class DriveBackupActivity : ComponentActivity() {
                 DriveAuthManager.clearToken(this@DriveBackupActivity)
             }
             return false
+        }
+    }
+
+    private fun listBackupsOnDrive(token: String): List<Pair<String, String>> {
+        // Return list of pairs (id, name)
+        val q = "name contains 'books_export' and mimeType='application/zip'"
+        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(q, "UTF-8")}&orderBy=createdTime%20desc&fields=files(id,name)"
+        val req = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $token")
+            .get()
+            .build()
+
+        val results = mutableListOf<Pair<String, String>>()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                if (resp.code == 401) DriveAuthManager.clearToken(this@DriveBackupActivity)
+                return results
+            }
+            val body = resp.body?.string() ?: return results
+            val jo = org.json.JSONObject(body)
+            val arr = jo.optJSONArray("files") ?: return results
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                results.add(o.getString("id") to o.getString("name"))
+            }
+        }
+        return results
+    }
+
+    private fun downloadFileFromDrive(token: String, fileId: String, dest: File): Boolean {
+        val url = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
+        val req = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $token")
+            .get()
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                if (resp.code == 401) DriveAuthManager.clearToken(this@DriveBackupActivity)
+                return false
+            }
+            resp.body?.byteStream()?.use { ins ->
+                dest.outputStream().use { outs ->
+                    ins.copyTo(outs)
+                }
+            }
+            return true
         }
     }
 }
