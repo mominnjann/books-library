@@ -103,10 +103,13 @@ class DriveBackupActivity : ComponentActivity() {
             var msg by remember { mutableStateOf<String?>(null) }
 
             // Backups list UI state
+            data class BackupItem(val id: String, val name: String, val createdTime: String?, val size: Long?)
+
             var showListDialog by remember { mutableStateOf(false) }
-            var backups by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+            var backups by remember { mutableStateOf<List<BackupItem>>(emptyList()) }
             var loadingBackups by remember { mutableStateOf(false) }
-            var confirmRestoreFor by remember { mutableStateOf<Pair<String, String>?>(null) }
+            var confirmRestoreFor by remember { mutableStateOf<BackupItem?>(null) }
+            var sortMode by remember { mutableStateOf("date_desc") } // date_desc, date_asc, size_desc, size_asc
 
             fun startSignIn() {
                 msg = null
@@ -114,11 +117,36 @@ class DriveBackupActivity : ComponentActivity() {
                 signInLauncher.launch(signInClient.signInIntent)
             }
 
+            fun formatTime(iso: String?): String {
+                if (iso == null || iso.isEmpty()) return "Unknown"
+                return try {
+                    val t = java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault())
+                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").format(t)
+                } catch (e: Exception) {
+                    iso
+                }
+            }
+
+            fun humanSize(sz: Long?): String {
+                if (sz == null || sz <= 0) return "-"
+                val kb = sz / 1024.0
+                if (kb < 1024) return String.format("%.1f KB", kb)
+                val mb = kb / 1024.0
+                return String.format("%.1f MB", mb)
+            }
+
             fun fetchAndShowBackups(token: String) {
                 scope.launch {
                     loadingBackups = true
                     val list = withContext(Dispatchers.IO) { listBackupsOnDrive(token) }
-                    backups = list
+                    // sort according to mode
+                    val sorted = when (sortMode) {
+                        "date_asc" -> list.sortedBy { it.createdTime ?: "" }
+                        "size_desc" -> list.sortedByDescending { it.size ?: 0L }
+                        "size_asc" -> list.sortedBy { it.size ?: Long.MAX_VALUE }
+                        else -> list.sortedByDescending { it.createdTime ?: "" } // date_desc
+                    }
+                    backups = sorted
                     loadingBackups = false
                     showListDialog = true
                 }
@@ -150,6 +178,23 @@ class DriveBackupActivity : ComponentActivity() {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
                             Text("Select a backup to restore", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
+
+                            // Sort controls
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Row {
+                                    Text("Sort:", modifier = Modifier.alignByBaseline())
+                                    Spacer(Modifier.width(8.dp))
+                                    Button(onClick = { sortMode = "date_desc" }) { Text("Newest") }
+                                    Spacer(Modifier.width(4.dp))
+                                    Button(onClick = { sortMode = "date_asc" }) { Text("Oldest") }
+                                    Spacer(Modifier.width(4.dp))
+                                    Button(onClick = { sortMode = "size_desc" }) { Text("Largest") }
+                                }
+                                Text("${backups.size} found", style = MaterialTheme.typography.bodySmall)
+                            }
+
+                            Spacer(Modifier.height(8.dp))
+
                             if (loadingBackups) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                                     CircularProgressIndicator()
@@ -158,14 +203,15 @@ class DriveBackupActivity : ComponentActivity() {
                                 Text("No backups found on Drive.")
                             } else {
                                 androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                                    items(backups) { pair ->
-                                        val (id, name) = pair
+                                    items(backups) { item ->
                                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Text(name, modifier = Modifier.weight(1f))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(item.name)
+                                                Spacer(Modifier.height(2.dp))
+                                                Text("${formatTime(item.createdTime)} • ${humanSize(item.size)}", style = MaterialTheme.typography.bodySmall)
+                                            }
                                             Spacer(Modifier.width(8.dp))
-                                            Button(onClick = {
-                                                confirmRestoreFor = pair
-                                            }) {
+                                            Button(onClick = { confirmRestoreFor = item }) {
                                                 Text("Restore")
                                             }
                                         }
@@ -181,11 +227,11 @@ class DriveBackupActivity : ComponentActivity() {
                 }
             }
 
-            confirmRestoreFor?.let { pair ->
+            confirmRestoreFor?.let { item ->
                 AlertDialog(
                     onDismissRequest = { confirmRestoreFor = null },
                     title = { Text("Confirm Restore") },
-                    text = { Text("Restore backup '${pair.second}'? This will add books and may overwrite existing ones.") },
+                    text = { Text("Restore backup '${item.name}'? This will add books and may overwrite existing ones.") },
                     confirmButton = {
                         TextButton(onClick = {
                             confirmRestoreFor = null
@@ -198,8 +244,8 @@ class DriveBackupActivity : ComponentActivity() {
                                     return@launch
                                 }
                                 // perform restore
-                                val out = File(cacheDir, pair.second)
-                                val ok = downloadFileFromDrive(token, pair.first, out)
+                                val out = File(cacheDir, item.name)
+                                val ok = downloadFileFromDrive(token, item.id, out)
                                 if (!ok) {
                                     showMessage("Failed to download backup")
                                     return@launch
@@ -358,17 +404,17 @@ class DriveBackupActivity : ComponentActivity() {
         }
     }
 
-    private fun listBackupsOnDrive(token: String): List<Pair<String, String>> {
-        // Return list of pairs (id, name)
+    private fun listBackupsOnDrive(token: String): List<BackupItem> {
+        // Return list of BackupItem (id, name, createdTime, size)
         val q = "name contains 'books_export' and mimeType='application/zip'"
-        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(q, "UTF-8")}&orderBy=createdTime%20desc&fields=files(id,name)"
+        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(q, "UTF-8")}&orderBy=createdTime%20desc&fields=files(id,name,createdTime,size)"
         val req = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $token")
             .get()
             .build()
 
-        val results = mutableListOf<Pair<String, String>>()
+        val results = mutableListOf<BackupItem>()
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) {
                 if (resp.code == 401) DriveAuthManager.clearToken(this@DriveBackupActivity)
@@ -379,7 +425,11 @@ class DriveBackupActivity : ComponentActivity() {
             val arr = jo.optJSONArray("files") ?: return results
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                results.add(o.getString("id") to o.getString("name"))
+                val id = o.optString("id")
+                val name = o.optString("name")
+                val created = if (o.has("createdTime")) o.optString("createdTime", null) else null
+                val size = if (o.has("size")) o.optLong("size", 0L) else 0L
+                results.add(BackupItem(id, name, created, if (size == 0L) null else size))
             }
         }
         return results
