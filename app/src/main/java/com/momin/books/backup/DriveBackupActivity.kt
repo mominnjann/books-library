@@ -1,5 +1,7 @@
 package com.momin.books.backup
 
+data class BackupItem(val id: String, val name: String, val createdTime: String?, val size: Long?)
+
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -33,6 +35,7 @@ import java.io.File
  * Simple Activity that handles Google Sign-In for Drive scopes and uploads the exported ZIP.
  * This is a minimal skeleton to demonstrate auth and upload; handle errors & token persistence for production.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 class DriveBackupActivity : ComponentActivity() {
     private val client = OkHttpClient()
 
@@ -58,11 +61,14 @@ class DriveBackupActivity : ComponentActivity() {
             if (result.resultCode == Activity.RESULT_OK) {
                 val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 try {
-                    val acct = task.getResult(Exception::class.java)
+                                val acct = task.getResult(Exception::class.java)
                     if (acct != null) {
                         // Acquire OAuth2 access token on background thread
                         val scope = "oauth2:https://www.googleapis.com/auth/drive.file"
-                        val account = acct.account
+                        val account = acct.account ?: run {
+                            showMessage("No account available for sign-in")
+                            return@registerForActivityResult
+                        }
                         // Launch coroutine to get token and upload
                         val scopeLauncher = lifecycleScope
                         scopeLauncher.launchWhenStarted {
@@ -71,7 +77,7 @@ class DriveBackupActivity : ComponentActivity() {
                                     GoogleAuthUtil.getToken(this@DriveBackupActivity, account, scope)
                                 } catch (e: UserRecoverableAuthException) {
                                     // Need to recover (user consent), launch intent
-                                    startActivityForResult(e.intent, 1001)
+                                    e.intent?.let { startActivityForResult(it, 1001) }
                                     null
                                 } catch (e: Exception) {
                                     e.printStackTrace()
@@ -103,7 +109,7 @@ class DriveBackupActivity : ComponentActivity() {
             var msg by remember { mutableStateOf<String?>(null) }
 
             // Backups list UI state
-            data class BackupItem(val id: String, val name: String, val createdTime: String?, val size: Long?)
+
 
             var showListDialog by remember { mutableStateOf(false) }
             var backups by remember { mutableStateOf<List<BackupItem>>(emptyList()) }
@@ -321,7 +327,8 @@ class DriveBackupActivity : ComponentActivity() {
                                 val scope = "oauth2:https://www.googleapis.com/auth/drive.file"
                                 val token = withContext(Dispatchers.IO) {
                                     try {
-                                        GoogleAuthUtil.getToken(this@DriveBackupActivity, acct.account, scope)
+                                        val account = acct.account ?: return@withContext null
+                                        GoogleAuthUtil.getToken(this@DriveBackupActivity, account, scope)
                                     } catch (e: Exception) {
                                         e.printStackTrace()
                                         null
@@ -356,8 +363,8 @@ class DriveBackupActivity : ComponentActivity() {
                     return@withContext
                 }
                 val latest = files.first()
-                val out = File(cacheDir, latest.second)
-                val ok = downloadFileFromDrive(token, latest.first, out)
+                val out = File(cacheDir, latest.name)
+                val ok = downloadFileFromDrive(token, latest.id, out)
                 if (!ok) {
                     showMessage("Failed to download backup")
                     return@withContext
