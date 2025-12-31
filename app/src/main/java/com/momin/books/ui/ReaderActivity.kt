@@ -10,13 +10,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.Alignment
 import androidx.lifecycle.lifecycleScope
 import com.momin.books.data.AppDatabase
 import com.momin.books.viewmodel.ReaderViewModel
@@ -120,6 +125,7 @@ fun PDFReaderView(path: String, startPage: Int = 0, onPageChanged: (Int) -> Unit
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EPUBReaderView(path: String) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -140,7 +146,9 @@ fun EPUBReaderView(path: String) {
                 val out = File(context.cacheDir, "epub_unzip_${System.currentTimeMillis()}")
                 if (!out.exists()) out.mkdirs()
                 ZipFile(sourceFile).use { zip ->
-                    zip.entries().asSequence().forEach { entry ->
+                    val entriesEnum = zip.entries()
+                    while (entriesEnum.hasMoreElements()) {
+                        val entry = entriesEnum.nextElement() as java.util.zip.ZipEntry
                         val outFile = File(out, entry.name)
                         if (entry.isDirectory) {
                             outFile.mkdirs()
@@ -164,7 +172,7 @@ fun EPUBReaderView(path: String) {
                     val text = f.readText()
                     if (text.contains("<nav", ignoreCase = true) && text.contains("toc", ignoreCase = true)) {
                         // simple regex to capture links inside nav
-                        val re = Regex("<a[^>]+href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL)
+                        val re = Regex("<a[^>]+href=\"([^\"]+)\"[^>]*>(.*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
                         re.findAll(text).forEach { m ->
                             val href = m.groupValues[1]
                             val title = m.groupValues[2].replace(Regex("<.*?>"), "").trim()
@@ -208,6 +216,7 @@ fun EPUBReaderView(path: String) {
         }
 
         // WebView
+        var webViewRef by remember { mutableStateOf<WebView?>(null) }
         AndroidView(factory = { ctx ->
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true // allow JS for injecting CSS dynamically
@@ -225,16 +234,17 @@ fun EPUBReaderView(path: String) {
                         }
                     }
                 }
-
-                // initial load after outDir and currentHref are prepared
-                LaunchedEffect(outDir, currentHref) {
-                    if (outDir != null && currentHref != null) {
-                        val f = File(outDir, currentHref!!)
-                        if (f.exists()) loadUrl("file://${f.absolutePath}")
-                    }
-                }
+                webViewRef = this
             }
         }, modifier = Modifier.weight(1f))
+
+        // initial load after outDir and currentHref are prepared
+        LaunchedEffect(outDir, currentHref) {
+            if (outDir != null && currentHref != null) {
+                val f = File(outDir, currentHref!!)
+                if (f.exists()) webViewRef?.loadUrl("file://${f.absolutePath}")
+            }
+        }
 
         // Simple chapter navigation
         Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
