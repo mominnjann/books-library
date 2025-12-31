@@ -98,13 +98,30 @@ class DriveBackupActivity : ComponentActivity() {
         }
 
         setContent {
+            val scope = rememberCoroutineScope()
             var busy by remember { mutableStateOf(false) }
             var msg by remember { mutableStateOf<String?>(null) }
+
+            // Backups list UI state
+            var showListDialog by remember { mutableStateOf(false) }
+            var backups by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+            var loadingBackups by remember { mutableStateOf(false) }
+            var confirmRestoreFor by remember { mutableStateOf<Pair<String, String>?>(null) }
 
             fun startSignIn() {
                 msg = null
                 busy = true
                 signInLauncher.launch(signInClient.signInIntent)
+            }
+
+            fun fetchAndShowBackups(token: String) {
+                scope.launch {
+                    loadingBackups = true
+                    val list = withContext(Dispatchers.IO) { listBackupsOnDrive(token) }
+                    backups = list
+                    loadingBackups = false
+                    showListDialog = true
+                }
             }
 
             Surface(modifier = Modifier.fillMaxSize()) {
@@ -115,12 +132,85 @@ class DriveBackupActivity : ComponentActivity() {
                         Text(if (busy) "Signing in..." else "Sign in & Upload Backup")
                     }
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { startRestoreFlow() }, enabled = !busy) {
-                        Text("List & Restore Latest Backup from Drive")
+                    Button(onClick = {
+                        val cached = DriveAuthManager.getCachedToken(this@DriveBackupActivity)
+                        if (cached != null) fetchAndShowBackups(cached)
+                        else startSignIn()
+                    }, enabled = !busy) {
+                        Text("List & Restore from Drive")
                     }
                     Spacer(Modifier.height(8.dp))
                     msg?.let { Text(it) }
                 }
+            }
+
+            if (showListDialog) {
+                AlertDialog(onDismissRequest = { showListDialog = false }) {
+                    Surface(shape = MaterialTheme.shapes.medium, tonalElevation = 8.dp) {
+                        Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+                            Text("Select a backup to restore", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(8.dp))
+                            if (loadingBackups) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                                    CircularProgressIndicator()
+                                }
+                            } else if (backups.isEmpty()) {
+                                Text("No backups found on Drive.")
+                            } else {
+                                androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                                    items(backups) { pair ->
+                                        val (id, name) = pair
+                                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(name, modifier = Modifier.weight(1f))
+                                            Spacer(Modifier.width(8.dp))
+                                            Button(onClick = {
+                                                confirmRestoreFor = pair
+                                            }) {
+                                                Text("Restore")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                TextButton(onClick = { showListDialog = false }) { Text("Close") }
+                            }
+                        }
+                    }
+                }
+            }
+
+            confirmRestoreFor?.let { pair ->
+                AlertDialog(
+                    onDismissRequest = { confirmRestoreFor = null },
+                    title = { Text("Confirm Restore") },
+                    text = { Text("Restore backup '${pair.second}'? This will add books and may overwrite existing ones.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            confirmRestoreFor = null
+                            showListDialog = false
+                            scope.launch {
+                                // Ensure we have a token
+                                val token = DriveAuthManager.getCachedToken(this@DriveBackupActivity)
+                                if (token == null) {
+                                    showMessage("No valid auth token; please sign in first")
+                                    return@launch
+                                }
+                                // perform restore
+                                val out = File(cacheDir, pair.second)
+                                val ok = downloadFileFromDrive(token, pair.first, out)
+                                if (!ok) {
+                                    showMessage("Failed to download backup")
+                                    return@launch
+                                }
+                                val restored = com.momin.books.backup.BackupManager.restoreLibrary(this@DriveBackupActivity, out)
+                                if (restored) showMessage("Restore complete") else showMessage("Restore failed")
+                            }
+                        }) { Text("Restore") }
+                    },
+                    dismissButton = { TextButton(onClick = { confirmRestoreFor = null }) { Text("Cancel") } }
+                )
             }
         }
     }
