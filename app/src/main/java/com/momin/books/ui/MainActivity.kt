@@ -25,6 +25,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.momin.books.data.Book
@@ -114,7 +116,11 @@ class MainActivity : ComponentActivity() {
 fun BookList(books: List<Book>, onClick: (Book) -> Unit, modifier: Modifier = Modifier) {
     LazyColumn(modifier = modifier.fillMaxSize().padding(8.dp)) {
         items(books) { book ->
-            Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onClick(book) }) {
+            Card(modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .semantics { contentDescription = "Open ${book.title} by ${book.author}" }
+                .clickable { onClick(book) }) {
                 Row(modifier = Modifier.padding(12.dp)) {
                     val img = remember(book.coverUri) {
                         book.coverUri?.let { path ->
@@ -123,7 +129,8 @@ fun BookList(books: List<Book>, onClick: (Book) -> Unit, modifier: Modifier = Mo
                         }
                     }
                     if (img != null) {
-                        Image(bitmap = img.asImageBitmap(), contentDescription = "cover", modifier = Modifier.size(72.dp))
+                        val imgDesc = "Cover of ${book.title} by ${book.author}"
+                        Image(bitmap = img.asImageBitmap(), contentDescription = imgDesc, modifier = Modifier.size(72.dp))
                     } else {
                         Box(modifier = Modifier.size(72.dp))
                     }

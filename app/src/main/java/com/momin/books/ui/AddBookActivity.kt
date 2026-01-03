@@ -27,12 +27,34 @@ class AddBookActivity : ComponentActivity() {
             var author by remember { mutableStateOf("") }
             var genre by remember { mutableStateOf("") }
             var isSaving by remember { mutableStateOf(false) }
+            var titleError by remember { mutableStateOf(false) }
+            var authorError by remember { mutableStateOf(false) }
 
             Scaffold(topBar = { SmallTopAppBar(title = { Text("Add Book") }) }) { padding ->
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it; if (titleError && it.trim().isNotEmpty()) titleError = false },
+                        label = { Text("Title") },
+                        modifier = Modifier.fillMaxWidth(),
+                        isError = titleError
+                    )
+                    if (titleError) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Title is required", color = MaterialTheme.colorScheme.error)
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(value = author, onValueChange = { author = it }, label = { Text("Author") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        value = author,
+                        onValueChange = { author = it; if (authorError && it.trim().isNotEmpty()) authorError = false },
+                        label = { Text("Author") },
+                        modifier = Modifier.fillMaxWidth(),
+                        isError = authorError
+                    )
+                    if (authorError) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Author is required", color = MaterialTheme.colorScheme.error)
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(value = genre, onValueChange = { genre = it }, label = { Text("Genre") }, modifier = Modifier.fillMaxWidth())
                     Spacer(modifier = Modifier.height(16.dp))
@@ -41,8 +63,13 @@ class AddBookActivity : ComponentActivity() {
                             Toast.makeText(this@AddBookActivity, "No file selected", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
-                        if (title.isBlank() || author.isBlank()) {
-                            Toast.makeText(this@AddBookActivity, "Enter title and author", Toast.LENGTH_SHORT).show()
+
+                        val t = title.trim()
+                        val a = author.trim()
+                        if (t.isEmpty() || a.isEmpty()) {
+                            titleError = t.isEmpty()
+                            authorError = a.isEmpty()
+                            Toast.makeText(this@AddBookActivity, "Please enter Title and Author", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
@@ -52,7 +79,7 @@ class AddBookActivity : ComponentActivity() {
                         } catch (e: Exception) { e.printStackTrace() }
 
                         isSaving = true
-                        vm.addBookFromUri(uri, title, author, if (genre.isBlank()) null else genre) { id ->
+                        vm.addBookFromUri(uri, t, a, if (genre.isBlank()) null else genre.trim()) { id ->
                             runOnUiThread {
                                 isSaving = false
                                 if (id > 0) {
@@ -63,7 +90,7 @@ class AddBookActivity : ComponentActivity() {
                                 }
                             }
                         }
-                    }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving) {
+                    }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving && uri != null && title.trim().isNotEmpty() && author.trim().isNotEmpty()) {
                         if (isSaving) Text("Saving...") else Text("Save")
                     }
                 }

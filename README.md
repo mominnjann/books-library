@@ -18,6 +18,7 @@ Planned / TODO:
   - Add upload / restore flows using Drive REST API (multipart upload)
   - Persist tokens securely (or rely on Google Play Sign-In session) and handle consent revocation
   - Acceptance: user can upload a ZIP backup and restore it from Drive with clear error messages
+  - Implementation note: initial skeleton caches access tokens in `DriveAuthManager` (SharedPreferences). For production, consider `EncryptedSharedPreferences` or `AccountManager` and handle token refresh/revocation robustly.
 - Add bookmarks and better resume logic
 - Tests and edge-case handling
 - UI polish

@@ -9,6 +9,8 @@ import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.momin.books.data.AppDatabase
@@ -46,7 +48,7 @@ class BookDetailActivity : ComponentActivity() {
                                 }
                                 startActivity(intent)
                             }
-                        }) {
+                        }, modifier = Modifier.semantics { contentDescription = "Open ${book?.title ?: "book"} in reader" }) {
                             Text("Open Reader")
                         }
                         Spacer(modifier = Modifier.width(8.dp))
@@ -58,7 +60,7 @@ class BookDetailActivity : ComponentActivity() {
                                     finish()
                                 }
                             }
-                        }) {
+                        }, modifier = Modifier.semantics { contentDescription = "Delete ${book?.title ?: "book"}" }) {
                             Text("Delete")
                         }
                     }
